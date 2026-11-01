@@ -13,3 +13,7 @@ A minimal, offline-capable, portrait PWA for the iPad Pro / iPhone.
 In **Safari**, open [the Pages app](https://mejtoogood.github.io/econo-high-cri-backlight/), then **Share → Add to Home Screen**. Open it from its Home Screen icon for standalone presentation without Safari's address bar and toolbars. The PWA requests portrait orientation, but iOS ultimately controls orientation locking and system overlays.
 
 For stable colour and output, turn off **True Tone**, **Night Shift** and automatic brightness, and set hardware brightness manually. A web app cannot directly set the display's hardware brightness or change its OLED emission wavelengths. **Display P3 gamut does not imply high CRI.**
+
+## iOS status bar
+
+Installed Home Screen PWAs cannot hide the iOS clock, battery and Wi-Fi icons. The app requests an **opaque black** status bar (instead of drawing the colour field behind the translucent system overlay), with the colour field starting below it. Because iOS can cache install-time metadata and icons, remove the existing Home Screen app and add it again after changing the status bar or icon. iOS determines the actual status-bar display and viewport.
