@@ -69,7 +69,7 @@
       border: 1px solid #595959;
       border-radius: 9px;
       background: #171717;
-      color: #fff;
+      color: var(--button-colour, #fff);
       font: 600 clamp(16px, 2.5vmin, 25px)/1 -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
       cursor: pointer;
       appearance: none;
@@ -77,10 +77,27 @@
       -webkit-tap-highlight-color: transparent;
       touch-action: manipulation;
     }
+    /* Inactive buttons use a coloured label; the active button fills with that colour. */
+    button[data-mode="white"] { --button-colour: #fff; --button-ink: #000; }
+    button[data-mode="r"] { --button-colour: #f00; --button-ink: #000; }
+    button[data-mode="g"] { --button-colour: #0f0; --button-ink: #000; }
+    button[data-mode="b"] { --button-colour: #00f; --button-ink: #fff; }
+    button[data-mode="c"] { --button-colour: #0ff; --button-ink: #000; }
+    button[data-mode="y"] { --button-colour: #ff0; --button-ink: #000; }
+    button[data-mode="m"] { --button-colour: #f0f; --button-ink: #000; }
+    @supports (color: color(display-p3 1 0 0)) {
+      button[data-mode="white"] { --button-colour: color(display-p3 1 1 1); }
+      button[data-mode="r"] { --button-colour: color(display-p3 1 0 0); }
+      button[data-mode="g"] { --button-colour: color(display-p3 0 1 0); }
+      button[data-mode="b"] { --button-colour: color(display-p3 0 0 1); }
+      button[data-mode="c"] { --button-colour: color(display-p3 0 1 1); }
+      button[data-mode="y"] { --button-colour: color(display-p3 1 1 0); }
+      button[data-mode="m"] { --button-colour: color(display-p3 1 0 1); }
+    }
     button[aria-pressed="true"] {
-      background: #fff;
-      color: #000;
-      border-color: #fff;
+      background: var(--button-colour, #fff);
+      color: var(--button-ink, #000);
+      border-color: var(--button-colour, #fff);
     }
     button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
     button:active { opacity: .78; }
