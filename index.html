@@ -146,8 +146,37 @@
         });
         try { localStorage.setItem("backlight-mode", mode); } catch (_) {}
       };
-      buttons.forEach(button => button.addEventListener("click", () => apply(button.dataset.mode)));
+      // Keep the display illuminated while the backlight is visible.
+      // iOS may require a user gesture; retry when touched or foregrounded.
+      let wakeLock = null;
+      let wakeLockPending = false;
+      const requestWakeLock = async () => {
+        if (!("wakeLock" in navigator) || document.visibilityState !== "visible" ||
+            wakeLock || wakeLockPending) return;
+        wakeLockPending = true;
+        try {
+          const lock = await navigator.wakeLock.request("screen");
+          wakeLock = lock;
+          lock.addEventListener("release", () => {
+            if (wakeLock === lock) wakeLock = null;
+          });
+        } catch (_) {
+          // Unavailable in some iOS modes, low-power conditions, or browsers.
+        } finally {
+          wakeLockPending = false;
+        }
+      };
+      buttons.forEach(button => button.addEventListener("click", () => {
+        apply(button.dataset.mode);
+        void requestWakeLock();
+      }));
       try { apply(localStorage.getItem("backlight-mode") || "white"); } catch (_) { apply("white"); }
+      document.addEventListener("pointerdown", () => { void requestWakeLock(); }, { passive: true });
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") void requestWakeLock();
+      });
+      window.addEventListener("pageshow", () => { void requestWakeLock(); });
+      void requestWakeLock();
       document.addEventListener("contextmenu", event => event.preventDefault());
       document.addEventListener("touchmove", event => event.preventDefault(), { passive: false });
       if ("serviceWorker" in navigator) {
