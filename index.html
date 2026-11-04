@@ -64,6 +64,7 @@
     html[data-mode="y"] .field { background-color: #ff0; background-color: color(display-p3 1 1 0); }
     html[data-mode="m"] .field { background-color: #f0f; background-color: color(display-p3 1 0 1); }
     .controls {
+      position: relative;
       min-height: 0;
       background: #000;
       display: grid;
@@ -89,6 +90,33 @@
       -webkit-appearance: none;
       -webkit-tap-highlight-color: transparent;
       touch-action: manipulation;
+    }
+    /* Status/control for iOS wake-lock permission, positioned in unused toolbar space. */
+    #wake-button {
+      position: absolute;
+      top: 6px;
+      right: max(8px, env(safe-area-inset-right));
+      width: auto;
+      height: 30px;
+      padding: 0 11px;
+      border-radius: 6px;
+      background: #202020;
+      border-color: #666;
+      color: #ddd;
+      font: 600 12px/1 -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+      z-index: 2;
+    }
+    #wake-button[data-state="held"] {
+      background: #19372c;
+      border-color: #49826b;
+      color: #d3ffe6;
+    }
+    #wake-button[data-state="error"] {
+      border-color: #ad7964;
+      color: #ffcab6;
+    }
+    #wake-button[data-state="unavailable"] {
+      color: #999;
     }
     /* Inactive buttons use a coloured label; the active button fills with that colour. */
     button[data-mode="white"] { --button-colour: #fff; --button-ink: #000; }
@@ -132,6 +160,7 @@
       <button type="button" data-mode="c" aria-label="Cyan" aria-pressed="false">C</button>
       <button type="button" data-mode="y" aria-label="Yellow" aria-pressed="false">Y</button>
       <button type="button" data-mode="m" aria-label="Magenta" aria-pressed="false">M</button>
+      <button type="button" id="wake-button" data-state="idle" aria-pressed="false">Keep awake</button>
     </nav>
   </main>
   <script>
@@ -146,37 +175,122 @@
         });
         try { localStorage.setItem("backlight-mode", mode); } catch (_) {}
       };
-      // Keep the display illuminated while the backlight is visible.
-      // iOS may require a user gesture; retry when touched or foregrounded.
+      // Safari may reject background/launch requests that lack a user gesture.
+      // Do not request at startup: make the first request synchronously from a tap.
+      // Show the actual API state rather than silently swallowing errors.
+      const wakeButton = document.getElementById("wake-button");
+      const field = document.querySelector(".field");
       let wakeLock = null;
       let wakeLockPending = false;
+      let wakeLockWanted = true;
+      let wakeError = null;
+
+      const updateWakeUI = () => {
+        const supported = typeof navigator.wakeLock?.request === "function";
+        const held = Boolean(wakeLock && !wakeLock.released);
+        wakeButton.setAttribute("aria-pressed", String(held));
+        if (!supported) {
+          wakeButton.dataset.state = "unavailable";
+          wakeButton.textContent = "Wake unavailable";
+          wakeButton.title = "Safari does not expose Screen Wake Lock here";
+        } else if (held) {
+          wakeButton.dataset.state = "held";
+          wakeButton.textContent = "Awake ON";
+          wakeButton.title = "Screen wake lock granted by Safari. Tap to release.";
+        } else if (wakeLockPending) {
+          wakeButton.dataset.state = "pending";
+          wakeButton.textContent = "Requesting…";
+          wakeButton.title = "Requesting screen wake lock";
+        } else if (!wakeLockWanted) {
+          wakeButton.dataset.state = "idle";
+          wakeButton.textContent = "Awake OFF";
+          wakeButton.title = "Tap to request screen wake lock";
+        } else if (wakeError) {
+          wakeButton.dataset.state = "error";
+          wakeButton.textContent = "Wake: " + wakeError.name;
+          wakeButton.title = wakeError.message;
+        } else {
+          wakeButton.dataset.state = "idle";
+          wakeButton.textContent = "Keep awake";
+          wakeButton.title = "Tap to keep the screen awake";
+        }
+      };
+
       const requestWakeLock = async () => {
-        if (!("wakeLock" in navigator) || document.visibilityState !== "visible" ||
-            wakeLock || wakeLockPending) return;
+        if (!wakeLockWanted || document.visibilityState !== "visible" ||
+            wakeLockPending || (wakeLock && !wakeLock.released)) return;
+        if (typeof navigator.wakeLock?.request !== "function") {
+          updateWakeUI();
+          return;
+        }
         wakeLockPending = true;
+        wakeError = null;
+        updateWakeUI();
         try {
+          // Invoke request() before the click handler returns: iOS may require activation.
           const lock = await navigator.wakeLock.request("screen");
+          if (!wakeLockWanted || document.visibilityState !== "visible") {
+            await lock.release();
+            return;
+          }
           wakeLock = lock;
           lock.addEventListener("release", () => {
-            if (wakeLock === lock) wakeLock = null;
+            if (wakeLock === lock) {
+              wakeLock = null;
+              updateWakeUI();
+            }
           });
-        } catch (_) {
-          // Unavailable in some iOS modes, low-power conditions, or browsers.
+        } catch (error) {
+          wakeError = {
+            name: String(error?.name || "Denied"),
+            message: String(error?.message || "Safari refused the wake lock")
+          };
         } finally {
           wakeLockPending = false;
+          updateWakeUI();
         }
+      };
+
+      const useWakeOnGesture = () => {
+        if (wakeLockWanted) void requestWakeLock();
       };
       buttons.forEach(button => button.addEventListener("click", () => {
         apply(button.dataset.mode);
-        void requestWakeLock();
+        useWakeOnGesture();
       }));
-      try { apply(localStorage.getItem("backlight-mode") || "white"); } catch (_) { apply("white"); }
-      document.addEventListener("pointerdown", () => { void requestWakeLock(); }, { passive: true });
-      document.addEventListener("visibilitychange", () => {
-        if (document.visibilityState === "visible") void requestWakeLock();
+      field.addEventListener("click", useWakeOnGesture);
+      wakeButton.addEventListener("click", () => {
+        if (wakeLock && !wakeLock.released) {
+          wakeLockWanted = false;
+          const held = wakeLock;
+          wakeLock = null;
+          void held.release().catch(() => {});
+          updateWakeUI();
+        } else if (wakeLockPending) {
+          wakeLockWanted = false;
+          updateWakeUI();
+        } else {
+          wakeLockWanted = true;
+          void requestWakeLock();
+        }
       });
-      window.addEventListener("pageshow", () => { void requestWakeLock(); });
-      void requestWakeLock();
+      try { apply(localStorage.getItem("backlight-mode") || "white"); } catch (_) { apply("white"); }
+
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible" && wakeLockWanted) {
+          // Reacquire if iOS allows; if rejected, the button reports the error.
+          void requestWakeLock();
+        } else {
+          updateWakeUI();
+        }
+      });
+      window.addEventListener("pageshow", () => {
+        if (wakeLockWanted && navigator.userActivation?.hasBeenActive) {
+          void requestWakeLock();
+        }
+        updateWakeUI();
+      });
+      updateWakeUI();
       document.addEventListener("contextmenu", event => event.preventDefault());
       document.addEventListener("touchmove", event => event.preventDefault(), { passive: false });
       if ("serviceWorker" in navigator) {
